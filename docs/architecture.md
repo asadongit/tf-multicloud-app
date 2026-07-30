@@ -14,10 +14,14 @@ The core architecture consists of:
 3. **Arq Background Worker (Redis)**: An asynchronous queuing worker that executes Terraform CLI commands (init, apply, destroy) in isolated local run directories. In the absence of a running Redis server, it seamlessly falls back to an in-process asynchronous task scheduler (`MockArqRedis`).
 4. **Terraform CLI**: The local execution engine for provisioning infrastructure.
 5. **Two-Tier Caching System**: Optimizes initialization times by caching provider plugins globally and sharing downloaded remote modules across tasks.
+6. **Model Context Protocol (MCP) Server**: Exposes API endpoints as structured tools to local and remote AI Agents.
 
 ```mermaid
 graph TD
     User([User / Browser]) -->|HTTP Requests| FastAPI[FastAPI App]
+    AIAgent([AI Agent / ChatGPT Desktop]) -->|STDIO / JSON-RPC| MCPServer[MCP Server]
+    AIAgent -->|SSE / HTTP| FastAPI
+    MCPServer -->|HTTP Requests| FastAPI
     FastAPI -->|Jinja2 Templates| HTML[HTML/CSS Frontend]
     FastAPI -->|SQL Queries| SQLite[(SQLite Database)]
     FastAPI -->|Enqueue Jobs| Queue[Arq Queue / Mock Queue]
@@ -38,6 +42,7 @@ Here is the role of each folder, file, and utility in the workspace:
 Contains the FastAPI application modules:
 *   **[app/main.py](file:///x:/Onedrive/Desktop/New%20folder/app/main.py)**: The entry point of the entire application. It initializes FastAPI, mounts static assets, and registers all router endpoints.
 *   **[app/worker.py](file:///x:/Onedrive/Desktop/New%20folder/app/worker.py)**: The background execution runner. It executes `terraform init`, `terraform apply`, and `terraform destroy` in subfolders, captures standard outputs in real-time, updates database states, and manages caching.
+*   **[app/mcp_server.py](file:///x:/Onedrive/Desktop/New%20folder/app/mcp_server.py)**: The Model Context Protocol (MCP) server script. Integrates the API with LLMs by wrapping tasks and deployments as tools.
 *   **📂 app/core/**: Reusable application-level core configurations and pools.
     *   **[app/core/config.py](file:///x:/Onedrive/Desktop/New%20folder/app/core/config.py)**: Handles system environments, variables, settings, and folder creations.
     *   **[app/core/database.py](file:///x:/Onedrive/Desktop/New%20folder/app/core/database.py)**: Establishes the SQLAlchemy engine, configures `SessionLocal`, and exports the `get_db()` session generator.
@@ -161,3 +166,24 @@ To speed up `terraform init` (which usually downloads provider binaries and modu
 | `/api/deployments/{id}` | `GET` | Returns single deployment details | User Header |
 | `/api/deployments/{id}` | `PATCH` | Updates input parameters and redeploys | User Header |
 | `/api/deployments/{id}` | `DELETE` | Destroys deployment resources | User Header |
+
+---
+
+## 7. Model Context Protocol (MCP) Integration
+
+The **Model Context Protocol (MCP)** integration enables AI agents (such as ChatGPT Desktop, Claude Desktop, or Cursor) to safely read, deploy, and delete infrastructure resources.
+
+### Exposed Tools
+
+The MCP server exposes 5 core tools:
+
+1. **`list_tasks`**: Lists all registered tasks in the template catalog.
+2. **`get_task_schema`**: Fetches the JSON input schema of a specific task.
+3. **`provision_task`**: Enqueues background provisioning of a task.
+4. **`get_deployment_status`**: Retrieves deployment state (`ACTIVE`, `FAILED`, etc.), parameters, and output variables.
+5. **`destroy_deployment`**: Initiates Terraform teardown of the deployment and removes it.
+
+### Transport Modes
+
+- **STDIO Mode (Local):** Launched as a subprocess by local AI clients. Communicates via standard input/output. Configured in clients to launch via `uv run python app/mcp_server.py`.
+- **SSE Mode (Network):** Serves the server over Server-Sent Events (SSE) by mounting the MCP application to FastAPI (`app.mount("/mcp", mcp.sse_app())`). This enables other machines on the network to connect to `http://<IP_ADDRESS>:8001/mcp/sse`.

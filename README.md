@@ -11,6 +11,7 @@ A premium, lightweight, production-ready, self-hosted infrastructure orchestrato
 - **Two-Tier Caching**: Near-instantaneous `terraform init` runs with global provider and module caching.
 - **Glassmorphism UI**: Beautiful, fully responsive theme-aware dashboard (Light & Dark mode).
 - **Comprehensive API**: Supports PATCH updates and clean DELETE teardowns.
+- **MCP Server Support**: Exposes local (STDIO) and remote/network (SSE) tools for AI agents (ChatGPT, Claude, Cursor) to manage the infrastructure.
 - **Zero-clutter Workspace**: Standard directory package hierarchy ready for GitHub and cloud hosting.
 
 ---
@@ -87,6 +88,26 @@ In a separate terminal, launch the `arq` worker:
 uv run arq app.worker.WorkerSettings
 ```
 *(If Redis is not running, the web server falls back to running tasks in-process asynchronously using `MockArqRedis`, so you do not strictly need to start a separate worker for local testing).*
+
+---
+
+## Model Context Protocol (MCP) Setup
+
+This project exposes its tasks and deployments as tools through an MCP server. This allows AI clients (like ChatGPT Desktop, Claude Desktop, or Cursor) to inspect schemas and deploy infrastructure directly.
+
+### 1. Running Locally (STDIO Mode)
+Configure your local AI client to launch the MCP server as a subprocess:
+* **Command:** `uv`
+* **Arguments:** `run --project "/path/to/project" python "/path/to/project/app/mcp_server.py"`
+
+*(Note: Ensure the FastAPI web server is also running locally so the MCP server can forward requests to the API endpoints).*
+
+### 2. Running over the Network (SSE Mode)
+When you start the FastAPI web server, the MCP server is automatically mounted and exposed via Server-Sent Events (SSE) at:
+```text
+http://<YOUR_IP_ADDRESS>:8001/mcp/sse
+```
+Other devices on the same network can connect to this endpoint directly without needing to launch a local Python command.
 
 ---
 
