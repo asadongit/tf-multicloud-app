@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Antigravity Orchestrator{% endblock %}</title>
+  
+  <!-- SEO & Accessibility -->
+  <meta name="description" content="A premium server-side orchestrator for registering Terraform tasks and managing background task provisionings.">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap Icons CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+  
+  <!-- Theme initialization script to prevent flash -->
+  <script>
+    (function () {
+      const savedTheme = localStorage.getItem("theme") || "dark";
+      document.documentElement.setAttribute("data-theme", savedTheme);
+    })();
+  </script>
+  
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Header Navigation -->
+  <header>
+    <div class="nav-container">
+      <a href="/" class="logo" id="logo-link">
+        <i class="bi bi-rocket"></i>
+        <span>Terraform Engine</span>
+      </a>
+      
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li>
+            <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" id="nav-dashboard">
+              <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="/tasks/new" class="nav-link btn-primary {% if active_page == 'new_task' %}active{% endif %}" id="nav-new-task">
+              <i class="bi bi-plus-lg"></i> Register Task
+            </a>
+          </li>
+          <li>
+            <button id="theme-toggle" style="padding: 0.4rem; font-size: 1rem; border-radius: 50%; width: 2.2rem; height: 2.2rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-muted); background: rgba(255, 255, 255, 0.04); cursor: pointer; color: var(--text-main);" aria-label="Toggle theme">
+              <i id="theme-icon" class="bi bi-sun"></i>
+            </button>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Body Content -->
+  <main class="container" id="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container" style="padding: 0 1rem;">
+      <p>&copy; 2026 Terraform Engine. All rights reserved. Powered by FastAPI & Terraform.</p>
+    </div>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+
+  <!-- Theme toggler logic -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const toggleBtn = document.getElementById("theme-toggle");
+      const themeIcon = document.getElementById("theme-icon");
+      
+      function updateIcon(theme) {
+        if (theme === "light") {
+          themeIcon.className = "bi bi-moon";
+        } else {
+          themeIcon.className = "bi bi-sun";
+        }
+      }
+      
+      // Initialize icon
+      const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+      updateIcon(currentTheme);
+      
+      toggleBtn.addEventListener("click", () => {
+        const activeTheme = document.documentElement.getAttribute("data-theme") || "dark";
+        const newTheme = activeTheme === "light" ? "dark" : "light";
+        
+        document.documentElement.setAttribute("data-theme", newTheme);
+        localStorage.setItem("theme", newTheme);
+        updateIcon(newTheme);
+      });
+    });
+  </script>
+</body>
+</html>

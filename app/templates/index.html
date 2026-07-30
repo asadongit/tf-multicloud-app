@@ -1,0 +1,359 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard | Antigravity Orchestrator{% endblock %}
+
+{% block content %}
+<!-- Metrics Summary Cards -->
+<div class="metrics-grid">
+  <div class="glass-panel metric-card">
+    <h3>Registered Tasks</h3>
+    <div class="metric-info">
+      <p id="metric-tasks-count">{{ tasks|length }}</p>
+    </div>
+  </div>
+  
+  <div class="glass-panel metric-card success">
+    <h3>Active Runs</h3>
+    <div class="metric-info">
+      <p id="metric-active-count">
+        {{ deployments|selectattr("status", "equalto", "ACTIVE")|list|length }}
+      </p>
+    </div>
+  </div>
+
+  <div class="glass-panel metric-card">
+    <h3>Provisioning</h3>
+    <div class="metric-info">
+      <p id="metric-provisioning-count">
+        {{ deployments|selectattr("status", "equalto", "PROVISIONING")|list|length }}
+      </p>
+    </div>
+  </div>
+
+  <div class="glass-panel metric-card danger">
+    <h3>Failed Runs</h3>
+    <div class="metric-info">
+      <p id="metric-failed-count">
+        {{ deployments|selectattr("status", "equalto", "FAILED")|list|length }}
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Main Dashboard Layout Split -->
+<div class="dashboard-layout">
+  
+  <!-- Left Side: Task Catalog -->
+  <div class="detail-section">
+    <h2 class="section-title" id="catalog-title">
+      <i class="bi bi-columns-gap"></i> Task Catalog
+    </h2>
+    
+    {% if not tasks %}
+    <div class="glass-panel empty-state" id="empty-tasks">
+      <div class="empty-state-icon"><i class="bi bi-archive"></i></div>
+      <p>No tasks registered yet.</p>
+      <a href="/tasks/new" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> Register First Task
+      </a>
+    </div>
+    {% else %}
+    <div class="task-grid" id="tasks-list">
+      {% for task in tasks %}
+      <div class="glass-panel task-card" id="task-card-{{ task.task_name }}">
+        <div class="task-header">
+          <div>
+            <h3 class="task-title">{{ task.display_name }}</h3>
+            <span class="task-name-tag">{{ task.task_name }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="toggleSchema('schema-{{ task.task_name }}')" aria-label="Toggle Schema Details">
+            <i class="bi bi-code"></i> Schema
+          </button>
+        </div>
+        
+        <!-- Collapsible Schema Block -->
+        <div class="code-block" id="schema-{{ task.task_name }}" style="display: none; margin-top: 0.5rem;">
+          <div class="code-header">JSON Schema</div>
+          <pre>{{ task.input_schema | tojson(indent=2) }}</pre>
+        </div>
+        
+        <div class="task-details">
+          <p><i class="bi bi-file-earmark-code"></i> Source: <code>{{ task.module_source }}</code></p>
+        </div>
+        
+        <div class="task-actions">
+          <button class="btn btn-primary" onclick="openProvisionModal('{{ task.task_name }}', '{{ task.display_name }}', '{{ task.input_schema|tojson|forceescape }}')">
+            <i class="bi bi-play"></i> Provision
+          </button>
+          <button class="btn btn-danger" onclick="deleteTask('{{ task.task_name }}')">
+            <i class="bi bi-trash"></i> Delete
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right Side: Deployments List -->
+  <div class="detail-section">
+    <h2 class="section-title" id="deployments-title">
+      <i class="bi bi-activity"></i> Deployments
+    </h2>
+    
+    {% if not deployments %}
+    <div class="glass-panel empty-state" id="empty-deployments">
+      <div class="empty-state-icon"><i class="bi bi-hdd-network"></i></div>
+      <p>No active deployments found.</p>
+      <p style="font-size: 0.85rem;">Select a task on the left to spin up resource provisioning.</p>
+    </div>
+    {% else %}
+    <div class="deployments-container" id="deployments-list">
+      {% for dep in deployments %}
+      <div class="glass-panel deployment-item" id="dep-item-{{ dep.deployment_id }}" data-status="{{ dep.status }}">
+        <div class="deployment-info">
+          <div class="deployment-title">
+            <span>{{ dep.deployment_name }}</span>
+            <!-- Dynamically Colored Badges -->
+            {% if dep.status == 'ACTIVE' %}
+              <span class="badge badge-active">Active</span>
+            {% elif dep.status in ['PENDING', 'PROVISIONING', 'UPDATING'] %}
+              <span class="badge badge-provisioning">Provisioning</span>
+            {% elif dep.status == 'DESTROYING' %}
+              <span class="badge badge-destroying">Destroying</span>
+            {% elif dep.status == 'FAILED' %}
+              <span class="badge badge-failed">Failed</span>
+            {% else %}
+              <span class="badge badge-destroyed">{{ dep.status }}</span>
+            {% endif %}
+          </div>
+          <div class="deployment-meta">
+            Task: <code>{{ dep.task_name }}</code> &bull; Owner: <code>{{ dep.owner_id }}</code>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <a href="/deployments/{{ dep.deployment_id }}" class="btn btn-secondary">
+            <i class="bi bi-eye"></i> Details
+          </a>
+          {% if dep.status not in ['PENDING', 'PROVISIONING', 'DESTROYING', 'UPDATING'] %}
+          <button class="btn btn-danger btn-sm" onclick="deleteDeployment('{{ dep.deployment_id }}')">
+            <i class="bi bi-trash"></i> Delete
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Provision Dialog / Modal Overlay -->
+<div class="modal-overlay" id="provision-modal" aria-hidden="true">
+  <div class="glass-panel modal-content">
+    <button class="modal-close" onclick="closeProvisionModal()" aria-label="Close modal">&times;</button>
+    <h2 id="modal-task-title" style="margin-bottom: 1.5rem;">Provision Task</h2>
+    
+    <div class="terminal-block" id="modal-error-block" style="display: none; padding: 0.75rem; margin-bottom: 1rem; border-radius: 6px;">
+      <i class="bi bi-exclamation-circle"></i> <span id="modal-error-msg">Error message</span>
+    </div>
+    
+    <form id="provision-form" onsubmit="submitProvision(event)">
+      <div class="form-group">
+        <label for="input-deployment-name">Deployment Name (Unique)</label>
+        <input type="text" id="input-deployment-name" class="form-control" placeholder="e.g. production-rg" required>
+        <span class="form-help">Unique display identifier for this deployment run.</span>
+      </div>
+      
+      <div class="form-group">
+        <label for="input-payload">Input Variables (JSON Dict)</label>
+        <textarea id="input-payload" class="form-control" rows="8" required></textarea>
+        <span class="form-help">Provide flat JSON key-values matching the task's input variables structure. This will directly compile into your <code>terraform.tfvars.json</code> file.</span>
+      </div>
+      
+      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeProvisionModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btn-submit-provision">
+          <i class="bi bi-send"></i> Launch Provision
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let activeTaskName = "";
+
+  // Collapsible toggle for Task schemas
+  function toggleSchema(id) {
+    const el = document.getElementById(id);
+    if (el.style.display === "none") {
+      el.style.display = "block";
+    } else {
+      el.style.display = "none";
+    }
+  }
+
+  // Open the Provision modal, populated with task templates
+  function openProvisionModal(taskName, displayName, schemaJsonStr) {
+    activeTaskName = taskName;
+    document.getElementById("modal-task-title").innerText = `Provision: ${displayName}`;
+    
+    // Auto-generate template inputs from input_schema properties
+    let inputTemplate = "{\n  \n}";
+    try {
+      const schema = JSON.parse(schemaJsonStr);
+      // Handle flat key-value definitions directly
+      let props = schema.properties || schema;
+      let templateObj = {};
+      for (let k in props) {
+        if (props[k].type === "string") templateObj[k] = "value";
+        else if (props[k].type === "number" || props[k].type === "integer") templateObj[k] = 0;
+        else if (props[k].type === "boolean") templateObj[k] = true;
+        else if (props[k].type === "array") templateObj[k] = [];
+        else templateObj[k] = "";
+      }
+      inputTemplate = JSON.stringify(templateObj, null, 2);
+    } catch (e) {
+      console.warn("Failed to parse schema details:", e);
+    }
+    
+    document.getElementById("input-payload").value = inputTemplate;
+    document.getElementById("modal-error-block").style.display = "none";
+    
+    const modal = document.getElementById("provision-modal");
+    modal.style.display = "flex";
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeProvisionModal() {
+    const modal = document.getElementById("provision-modal");
+    modal.style.display = "none";
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  // Submit the Provision form via AJAX
+  async function submitProvision(e) {
+    e.preventDefault();
+    
+    const deploymentName = document.getElementById("input-deployment-name").value.trim();
+    const rawPayload = document.getElementById("input-payload").value.trim();
+    const errorBlock = document.getElementById("modal-error-block");
+    const errorMsg = document.getElementById("modal-error-msg");
+    const submitBtn = document.getElementById("btn-submit-provision");
+    
+    errorBlock.style.display = "none";
+    
+    // 1. Validate payload JSON
+    let parsedPayload;
+    try {
+      parsedPayload = JSON.parse(rawPayload);
+    } catch (err) {
+      errorBlock.style.display = "block";
+      errorMsg.innerText = "Invalid JSON syntax. Please verify commas and quotes.";
+      return;
+    }
+    
+    // 2. Perform provision request
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="bi bi-hourglass"></i> Deploying...`;
+    
+    try {
+      const response = await fetch(`/api/provision/${activeTaskName}?deployment_name=${encodeURIComponent(deploymentName)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": "default-user" // Default owner ID fallback
+        },
+        body: JSON.stringify(parsedPayload)
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Provision request failed.");
+      }
+      
+      // Success! Refresh page to show provisioning list
+      window.location.reload();
+      
+    } catch (err) {
+      errorBlock.style.display = "block";
+      errorMsg.innerText = err.message;
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `<i class="bi bi-send"></i> Launch Provision`;
+    }
+  }
+
+  // Delete task via AJAX
+  async function deleteTask(taskName) {
+    if (!confirm(`Are you sure you want to delete task "${taskName}"? This will also permanently delete all associated deployments.`)) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/admin/tasks/${taskName}`, {
+        method: "DELETE",
+        headers: {
+          "X-Admin-Token": "admin-token"
+        }
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Failed to delete task.");
+      }
+      window.location.reload();
+    } catch (err) {
+      alert(`Error deleting task: ${err.message}`);
+    }
+  }
+
+  // Delete deployment via AJAX
+  async function deleteDeployment(deploymentId) {
+    if (!confirm("Are you sure you want to delete this deployment? This will permanently destroy all cloud infrastructure associated with it and remove it from the database.")) {
+      return;
+    }
+    try {
+      const response = await fetch(`/api/deployments/${deploymentId}`, {
+        method: "DELETE",
+        headers: {
+          "X-User-Id": "default-user" // Default owner ID fallback
+        }
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Failed to delete deployment.");
+      }
+      window.location.reload();
+    } catch (err) {
+      alert(`Error deleting deployment: ${err.message}`);
+    }
+  }
+
+  // Auto-refresher for Active Provisioning/Pending list items
+  async function pollRunningDeployments() {
+    const items = document.querySelectorAll(".deployment-item");
+    let needsPoll = false;
+    
+    items.forEach(item => {
+      const status = item.getAttribute("data-status");
+      if (status === "PENDING" || status === "PROVISIONING" || status === "DESTROYING" || status === "UPDATING") {
+        needsPoll = true;
+      }
+    });
+    
+    if (needsPoll) {
+      // Reload page to fetch updated database models if worker finishes
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    }
+  }
+
+  // Run on startup
+  window.addEventListener("DOMContentLoaded", () => {
+    pollRunningDeployments();
+  });
+</script>
+{% endblock %}

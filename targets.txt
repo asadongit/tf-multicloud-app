@@ -1,0 +1,14 @@
+Redis (config.py, queue.py)
+Database (config.py, database.py)
+JWT authentication (auth.py)
+managing cloud access keys and secrets.
+deployment name based query and APIs for AI models to work, therefore imposing unique deployment name.
+should i cache provider binary in depoloyment_runs as well or global caching is enough?
+in worker.py def merge_global_modules logic
+on frontend, render only those deployments, specific to user. for now it renders every deployment
+in worker.py, client side streaming of live stdout, stderr. agent friendly.
+
+module_source in admin.py in create task is returning different values for zip and tf
+deployment name to be unique globally or per user? in deployment.py 45
+
+handling resource deletion from console.

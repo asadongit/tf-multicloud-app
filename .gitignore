@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local databases
+*.db
+*.db-journal
+
+# App directories and cached scripts
+deployments_runs/
+task_scripts/
+.terraform_cache/
+.terraform_plugin_cache/
+.pytest_cache/
+
+# Local Terraform files
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Local secrets and config files
+auth.txt
+.env
+*.env
+*.env.local
