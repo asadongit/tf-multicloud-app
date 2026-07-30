@@ -19,19 +19,28 @@ HEADERS = {
 
 
 @mcp.tool()
-async def list_tasks() -> str:
+async def list_tasks(category: str = None, provider: str = None) -> str:
     """
     List all available Terraform tasks (templates) in the registry.
+    Args:
+        category: Optional category to filter tasks (e.g. database, network, compute).
+        provider: Optional cloud provider to filter tasks (e.g. aws, azure, gcp).
     Returns:
         JSON string representing the list of tasks and their details.
     """
-    #user_token = ctx.request_context.get("authorization_header")
-    #headers = {"Authorization": f"Bearer {user_token}"}
-
-    
+    params = {"view": "summary"}
+    if category:
+        params["category"] = category
+    if provider:
+        params["provider"] = provider
+        
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{API_BASE_URL}/tasks", headers=HEADERS)
+            response = await client.get(
+                f"{API_BASE_URL}/tasks",
+                params=params,
+                headers=HEADERS
+            )
             response.raise_for_status()
             return response.text
     except httpx.HTTPError as exc:

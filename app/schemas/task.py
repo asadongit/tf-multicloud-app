@@ -12,3 +12,14 @@ class TaskResponse(BaseModel):
     module_version: Optional[str]
     category: Optional[str]
     provider: Optional[str]
+
+
+class TaskSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    task_name: str
+    display_name: str
+    description: Optional[str]
+    category: Optional[str]
+    provider: Optional[str]
+

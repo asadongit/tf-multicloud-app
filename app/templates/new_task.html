@@ -44,6 +44,30 @@
         <span class="form-help">Friendly display label for the task card.</span>
       </div>
 
+      <!-- Description -->
+      <div class="form-group">
+        <label for="description">Description (Optional)</label>
+        <textarea id="description" name="description" class="form-control" rows="3"
+          placeholder="Describe what this task does or what resources it provisions..."></textarea>
+        <span class="form-help">Detailed explanation of the task's purpose and functionality.</span>
+      </div>
+
+      <!-- Category and Provider -->
+      <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+          <label for="category">Category (Optional)</label>
+          <input type="text" id="category" name="category" class="form-control"
+            placeholder="e.g. database, network, compute">
+          <span class="form-help">Group/type classification.</span>
+        </div>
+        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+          <label for="provider">Cloud Provider (Optional)</label>
+          <input type="text" id="provider" name="provider" class="form-control"
+            placeholder="e.g. aws, azure, gcp, local">
+          <span class="form-help">Infrastructure provider targeted.</span>
+        </div>
+      </div>
+
       <!-- JSON Input Schema -->
       <div class="form-group">
         <label for="input_schema">Input Validation Schema (JSON Schema)</label>
@@ -91,6 +115,9 @@
 
     const taskName = document.getElementById("task_name").value.trim();
     const displayName = document.getElementById("display_name").value.trim();
+    const description = document.getElementById("description").value.trim();
+    const category = document.getElementById("category").value.trim();
+    const provider = document.getElementById("provider").value.trim();
     const schemaText = document.getElementById("input_schema").value.trim();
     const fileInput = document.getElementById("script");
     const errorBlock = document.getElementById("form-error-block");
@@ -123,6 +150,15 @@
     const formData = new FormData();
     formData.append("task_name", taskName);
     formData.append("display_name", displayName);
+    if (description) {
+      formData.append("description", description);
+    }
+    if (category) {
+      formData.append("category", category);
+    }
+    if (provider) {
+      formData.append("provider", provider);
+    }
     formData.append("input_schema", schemaText);
     formData.append("script", fileInput.files[0]);
 
