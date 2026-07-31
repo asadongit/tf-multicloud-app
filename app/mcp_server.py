@@ -1,21 +1,30 @@
 import os
 import httpx
-from mcp.server.mcpserver import MCPServer
+from fastmcp import FastMCP
+from contextlib import asynccontextmanager
 
-# Initialize MCPServer
-mcp = MCPServer("Terraform-Engine-MCP")
+# Initialize FastMCP
+mcp = FastMCP("Terraform-Engine-MCP")
 
-# Target the local running FastAPI application (port 8000 is default for fastapi dev)
+# Target the local running FastAPI application
 API_BASE_URL = os.getenv("TERRAFORM_ENGINE_API_URL", "http://127.0.0.1:8001/api")
 
 # Headers for authentication
-# app/mcp_server.py
-import os
-
 HEADERS = {
     "X-User-Id": os.getenv("TERRAFORM_ENGINE_USER_ID", "default-user"),
     "X-Admin-Token": os.getenv("TERRAFORM_ENGINE_ADMIN_TOKEN", "default-token")
 }
+
+# Connection Pooling
+http_client: httpx.AsyncClient | None = None
+
+@mcp.lifespan()
+@asynccontextmanager
+async def manage_http_lifecycle(server):
+    global http_client
+    http_client = httpx.AsyncClient(base_url=API_BASE_URL, headers=HEADERS)
+    yield
+    await http_client.aclose()
 
 
 @mcp.tool()
@@ -35,18 +44,14 @@ async def list_tasks(category: str = None, provider: str = None) -> str:
         params["provider"] = provider
         
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{API_BASE_URL}/tasks",
-                params=params,
-                headers=HEADERS
-            )
-            response.raise_for_status()
-            return response.text
+        response = await http_client.get("/tasks", params=params)
+        response.raise_for_status()
+        return response.text
     except httpx.HTTPError as exc:
         return f"HTTP error occurred while listing tasks: {exc}"
     except Exception as exc:
         return f"Unexpected error: {exc}"
+
 
 @mcp.tool()
 async def get_task_schema(task_name: str) -> str:
@@ -56,16 +61,16 @@ async def get_task_schema(task_name: str) -> str:
         task_name: The unique alphanumeric name of the task.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{API_BASE_URL}/tasks/{task_name}", headers=HEADERS)
-            if response.status_code == 404:
-                return f"Error: Task '{task_name}' not found."
-            response.raise_for_status()
-            return response.text
+        response = await http_client.get(f"/tasks/{task_name}")
+        if response.status_code == 404:
+            return f"Error: Task '{task_name}' not found."
+        response.raise_for_status()
+        return response.text
     except httpx.HTTPError as exc:
         return f"HTTP error occurred while getting task schema: {exc}"
     except Exception as exc:
         return f"Unexpected error: {exc}"
+
 
 @mcp.tool()
 async def provision_task(task_name: str, deployment_name: str, payload: dict) -> str:
@@ -77,28 +82,27 @@ async def provision_task(task_name: str, deployment_name: str, payload: dict) ->
         payload: JSON object/dictionary containing the variables matching the task schema.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            params = {"deployment_name": deployment_name}
-            response = await client.post(
-                f"{API_BASE_URL}/provision/{task_name}",
-                params=params,
-                json=payload,
-                headers=HEADERS
-            )
-            if response.status_code == 422:
-                detail = response.json().get('detail')
-                return f"Validation Error: {detail}"
-            if response.status_code == 404:
-                return f"Error: Task '{task_name}' not found."
-            if response.status_code == 400:
-                detail = response.json().get('detail')
-                return f"Error: {detail}"
-            response.raise_for_status()
-            return response.text
+        params = {"deployment_name": deployment_name}
+        response = await http_client.post(
+            f"/provision/{task_name}",
+            params=params,
+            json=payload
+        )
+        if response.status_code == 422:
+            detail = response.json().get('detail')
+            return f"Validation Error: {detail}"
+        if response.status_code == 404:
+            return f"Error: Task '{task_name}' not found."
+        if response.status_code == 400:
+            detail = response.json().get('detail')
+            return f"Error: {detail}"
+        response.raise_for_status()
+        return response.text
     except httpx.HTTPError as exc:
         return f"HTTP error occurred while provisioning task: {exc}"
     except Exception as exc:
         return f"Unexpected error: {exc}"
+
 
 @mcp.tool()
 async def get_deployment_status(deployment_name: str) -> str:
@@ -108,19 +112,16 @@ async def get_deployment_status(deployment_name: str) -> str:
         deployment_name: The unique name of the deployment to inspect.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{API_BASE_URL}/deployments/name/{deployment_name}",
-                headers=HEADERS
-            )
-            if response.status_code == 404:
-                return f"Error: Deployment '{deployment_name}' not found."
-            response.raise_for_status()
-            return response.text
+        response = await http_client.get(f"/deployments/name/{deployment_name}")
+        if response.status_code == 404:
+            return f"Error: Deployment '{deployment_name}' not found."
+        response.raise_for_status()
+        return response.text
     except httpx.HTTPError as exc:
         return f"HTTP error occurred while getting deployment status: {exc}"
     except Exception as exc:
         return f"Unexpected error: {exc}"
+
 
 @mcp.tool()
 async def destroy_deployment(deployment_name: str) -> str:
@@ -130,22 +131,19 @@ async def destroy_deployment(deployment_name: str) -> str:
         deployment_name: The name of the deployment to destroy.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                f"{API_BASE_URL}/deployments/name/{deployment_name}",
-                headers=HEADERS
-            )
-            if response.status_code == 404:
-                return f"Error: Deployment '{deployment_name}' not found."
-            if response.status_code == 400:
-                detail = response.json().get('detail')
-                return f"Error: {detail}"
-            response.raise_for_status()
-            return response.text
+        response = await http_client.delete(f"/deployments/name/{deployment_name}")
+        if response.status_code == 404:
+            return f"Error: Deployment '{deployment_name}' not found."
+        if response.status_code == 400:
+            detail = response.json().get('detail')
+            return f"Error: {detail}"
+        response.raise_for_status()
+        return response.text
     except httpx.HTTPError as exc:
         return f"HTTP error occurred while destroying deployment: {exc}"
     except Exception as exc:
         return f"Unexpected error: {exc}"
+
 
 if __name__ == "__main__":
     mcp.run()

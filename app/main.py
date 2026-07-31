@@ -34,7 +34,7 @@ app.include_router(deployments_router)
 app.include_router(frontend_router)
 
 # Mount the MCP server to /mcp route
-app.mount("/mcp", mcp.sse_app())
+app.mount("/mcp", mcp.http_app())
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=8001, reload=True)

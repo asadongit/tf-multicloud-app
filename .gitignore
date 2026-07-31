@@ -31,3 +31,5 @@ auth.txt
 .env
 *.env
 *.env.local
+
+features.txt

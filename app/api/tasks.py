@@ -20,11 +20,20 @@ def list_tasks(
         query = query.filter(Task.category == category)
     if provider:
         query = query.filter(Task.provider == provider)
-    
-    tasks = query.all()
+
+    from sqlalchemy.orm import load_only
+
     if view == "summary":
+        tasks = query.options(load_only(Task.task_name, Task.description, Task.display_name, Task.category, Task.provider)).all()
         return [TaskSummaryResponse.model_validate(t) for t in tasks]
-    return tasks
+    else:
+        tasks = query.all()
+        return tasks
+    
+    #tasks = query.all()
+    #if view == "summary":
+    #    return [TaskSummaryResponse.model_validate(t) for t in tasks]
+    #return tasks
 
 
 @router.get("/tasks/{task_name}", response_model=TaskResponse)
