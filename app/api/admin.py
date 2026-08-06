@@ -3,7 +3,7 @@ import re
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from jsonschema import Draft7Validator
@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.models.task import Task
 from app.models.deployment import Deployment
 from app.schemas.task import TaskResponse
+from app.core.queue import get_arq_pool
 
 router = APIRouter(prefix="/api", tags=["admin"])
 
@@ -104,7 +105,7 @@ def _safe_extract(zf: zipfile.ZipFile, dest_dir: Path) -> None:
 
 
 @router.post("/admin/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(
+async def create_task(
     task_name: str = Form(..., description="Unique alphanumeric identifier for the task"),
     display_name: str = Form(...),
     description: Optional[str] = Form(None),
@@ -114,6 +115,7 @@ def create_task(
     module_version: Optional[str] = Form(None),
     script: UploadFile = ...,
     db: Session = Depends(get_db),
+    redis: Any = Depends(get_arq_pool),
     _admin=Depends(require_admin),
 ):
     # Validate task_name format
@@ -154,13 +156,23 @@ def create_task(
         shutil.rmtree(settings.TASK_SCRIPTS_ROOT / task_name, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to create task: {exc}")
 
+    # Update Redis distinct count hashes incrementally
+    try:
+        if task.category:
+            await redis.hincrby("categories:distinct", task.category, 1)
+        if task.provider:
+            await redis.hincrby("providers:distinct", task.provider, 1)
+    except Exception as exc:
+        print(f"[Warning] Failed to increment Redis distinct count for task '{task_name}': {exc}")
+
     return task
 
 
 @router.delete("/admin/tasks/{task_name}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(
+async def delete_task(
     task_name: str,
     db: Session = Depends(get_db),
+    redis: Any = Depends(get_arq_pool),
     _admin=Depends(require_admin),
 ):
     task = db.query(Task).filter(Task.task_name == task_name).first()
@@ -182,6 +194,23 @@ def delete_task(
     if task_dir.exists() and task_dir.is_dir():
         shutil.rmtree(task_dir, ignore_errors=True)
 
+    # Store category and provider before deleting row
+    task_category = task.category
+    task_provider = task.provider
+
     # Delete task database row
     db.delete(task)
     db.commit()
+
+    # Decrement Redis distinct counts incrementally
+    try:
+        if task_category:
+            new_cat_cnt = await redis.hincrby("categories:distinct", task_category, -1)
+            if new_cat_cnt <= 0:
+                await redis.hdel("categories:distinct", task_category)
+        if task_provider:
+            new_prov_cnt = await redis.hincrby("providers:distinct", task_provider, -1)
+            if new_prov_cnt <= 0:
+                await redis.hdel("providers:distinct", task_provider)
+    except Exception as exc:
+        print(f"[Warning] Failed to decrement Redis distinct count for task '{task_name}': {exc}")

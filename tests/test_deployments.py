@@ -227,6 +227,20 @@ def test_get_and_list_deployments(client):
     assert dep_id_1 in dep_ids_1
     assert dep_id_2 in dep_ids_1
 
+    # Test summary view endpoint
+    summary_res = client.get("/api/deployments?view=summary", headers={"X-User-Id": "owner-1"})
+    assert summary_res.status_code == 200
+    sum_deps = summary_res.json()
+    assert len(sum_deps) == 2
+    assert "current_inputs" not in sum_deps[0]
+    assert "deployment_id" not in sum_deps[0]
+    assert "owner_id" not in sum_deps[0]
+    assert "created_at" not in sum_deps[0]
+    assert "updated_at" not in sum_deps[0]
+    assert "deployment_name" in sum_deps[0]
+    assert "task_name" in sum_deps[0]
+    assert "status" in sum_deps[0]
+
     # 5. List deployments for owner-2
     list_res_2 = client.get("/api/deployments", headers={"X-User-Id": "owner-2"})
     assert list_res_2.status_code == 200
@@ -624,3 +638,74 @@ def test_patch_deployment_invalid_state(client):
     )
     assert patch_res.status_code == 400
     assert "Cannot update deployment in status" in patch_res.json()["detail"]
+
+
+def test_delete_deployment_blocked_by_dependencies(client):
+    headers = {"X-Admin-Token": "admin-token", "X-User-Id": "owner-dep-test"}
+    
+    # 1. Create parent subnet task & child vm task
+    client.post(
+        "/api/admin/tasks",
+        data={
+            "task_name": "parent-subnet-task",
+            "display_name": "Parent Subnet Task",
+            "input_schema": '{"type": "object", "properties": {"subnet_name": {"type": "string"}}}',
+        },
+        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        headers={"X-Admin-Token": "admin-token"}
+    )
+    client.post(
+        "/api/admin/tasks",
+        data={
+            "task_name": "child-vm-task",
+            "display_name": "Child VM Task",
+            "input_schema": '{"type": "object", "properties": {"subnet_name": {"type": "string"}}}',
+        },
+        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        headers={"X-Admin-Token": "admin-token"}
+    )
+
+    # 2. Provision Parent Subnet Deployment
+    with patch("app.core.queue.MockArqRedis.enqueue_job", return_value=None):
+        parent_res = client.post(
+            "/api/provision/parent-subnet-task?deployment_name=test-subnet-dep",
+            json={"subnet_name": "actual-subnet-01"},
+            headers=headers
+        )
+        parent_id = parent_res.json()["deployment_id"]
+
+        # Mark parent as ACTIVE
+        db = TestSessionLocal()
+        try:
+            parent_dep = db.query(Deployment).filter(Deployment.deployment_id == parent_id).first()
+            parent_dep.status = DeploymentStatus.ACTIVE
+            db.commit()
+        finally:
+            db.close()
+
+        # 3. Provision Child VM Deployment referencing the parent deployment name
+        child_res = client.post(
+            "/api/provision/child-vm-task?deployment_name=test-vm-child",
+            json={"subnet_name": "test-subnet-dep"},
+            headers=headers
+        )
+        child_id = child_res.json()["deployment_id"]
+
+        # Mark child as ACTIVE
+        db = TestSessionLocal()
+        try:
+            child_dep = db.query(Deployment).filter(Deployment.deployment_id == child_id).first()
+            child_dep.status = DeploymentStatus.ACTIVE
+            db.commit()
+        finally:
+            db.close()
+
+    # 4. Attempt to delete Parent Subnet Deployment -> Should be blocked with 409 Conflict
+    del_res = client.delete(
+        "/api/deployments/name/test-subnet-dep",
+        headers=headers
+    )
+    assert del_res.status_code == 409
+    assert "Deletion blocked" in del_res.json()["detail"]
+    assert "test-vm-child" in del_res.json()["detail"]
+

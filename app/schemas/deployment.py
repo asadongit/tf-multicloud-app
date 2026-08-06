@@ -13,6 +13,14 @@ class ProvisionResponse(BaseModel):
     status: DeploymentStatus
 
 
+class DeploymentSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    deployment_name: str
+    task_name: str
+    status: DeploymentStatus
+
+
 class DeploymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,3 +34,4 @@ class DeploymentResponse(BaseModel):
     last_error: Optional[str]
     created_at: datetime
     updated_at: datetime
+

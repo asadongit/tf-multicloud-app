@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from sqlalchemy.orm import Session
 from arq.connections import RedisSettings
+from sqlalchemy import func
+from arq.cron import cron
 
 from app.core.database import SessionLocal
 from app.models.task import Task
@@ -533,8 +535,44 @@ async def run_terraform_update(ctx, run_id: str, deployment_id: str, inputs: dic
         db.close()
 
 
+
+
+async def reconcile_distinct_counts(ctx):
+    """Periodic Arq reconciliation job that recomputes ground truth counts from SQL and overwrites Redis Hashes."""
+    print("[Arq] Running reconcile_distinct_counts background job...")
+    db = SessionLocal()
+    try:
+        redis = ctx.get("redis") if ctx and isinstance(ctx, dict) else None
+        if not redis:
+            from app.core.queue import get_arq_pool
+            redis = await get_arq_pool()
+        
+        # 1. Categories
+        cat_rows = db.query(Task.category, func.count(Task.task_name))\
+            .filter(Task.category.isnot(None))\
+            .group_by(Task.category).all()
+        cat_counts = {val: count for val, count in cat_rows if val}
+        if cat_counts:
+            await redis.hset("categories:distinct", mapping=cat_counts)
+            
+        # 2. Providers
+        prov_rows = db.query(Task.provider, func.count(Task.task_name))\
+            .filter(Task.provider.isnot(None))\
+            .group_by(Task.provider).all()
+        prov_counts = {val: count for val, count in prov_rows if val}
+        if prov_counts:
+            await redis.hset("providers:distinct", mapping=prov_counts)
+            
+        print(f"[Arq] Reconciled distinct counts: {len(cat_counts)} categories, {len(prov_counts)} providers.")
+    except Exception as exc:
+        print(f"[Arq Error] Failed to reconcile distinct counts: {exc}")
+    finally:
+        db.close()
+
+
 class WorkerSettings:
-    functions = [run_terraform_create, run_terraform_destroy, run_terraform_update]
+    functions = [run_terraform_create, run_terraform_destroy, run_terraform_update, reconcile_distinct_counts]
+    cron_jobs = [cron(reconcile_distinct_counts, hour=0, minute=0)]
     redis_settings = RedisSettings(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT

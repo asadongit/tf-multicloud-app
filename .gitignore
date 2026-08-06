@@ -33,3 +33,8 @@ auth.txt
 *.env.local
 
 features.txt
+
+# Temporarily excluded components
+app/agent/
+app/core/llm_orchestrator.py
+app/core/history_manager.py

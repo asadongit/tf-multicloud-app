@@ -52,3 +52,15 @@ def deployment_detail_page(request: Request, deployment_id: str, db: Session = D
             "active_page": "dashboard"
         }
     )
+
+
+@router.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="chat.html",
+        context={
+            "active_page": "chat"
+        }
+    )
+

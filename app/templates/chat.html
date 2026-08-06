@@ -1,0 +1,575 @@
+{% extends "layout.html" %}
+
+{% block title %}AI Assistant | Antigravity Orchestrator{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  .chat-container {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    height: calc(85vh - 80px);
+  }
+
+  .chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .chat-box {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-bottom: 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-muted);
+    border-radius: 12px;
+  }
+
+  .message-bubble pre {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-muted);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+  }
+
+  .message-bubble code {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.875em;
+  }
+
+  .message-row {
+    display: flex;
+    flex-direction: column;
+    max-width: 80%;
+  }
+
+  .message-row.user {
+    align-self: flex-end;
+  }
+
+  .message-row.assistant {
+    align-self: flex-start;
+  }
+
+  .message-bubble {
+    padding: 0.85rem 1.15rem;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .user .message-bubble {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: #ffffff;
+    border-bottom-right-radius: 2px;
+  }
+
+  .assistant .message-bubble {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-muted);
+    color: var(--text-main);
+    border-bottom-left-radius: 2px;
+  }
+
+  .tool-badge-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .tool-badge {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background 0.2s;
+  }
+
+  .tool-badge:hover {
+    background: rgba(59, 130, 246, 0.25);
+  }
+
+  .tool-details {
+    display: none;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.75rem;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-muted);
+    padding: 0.5rem;
+    border-radius: 6px;
+    margin-top: 0.25rem;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+  }
+
+  .suggestion-chips {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .chip {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-muted);
+    padding: 0.4rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.825rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .chip:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-main);
+    border-color: var(--primary);
+  }
+
+  .input-bar {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .input-bar input {
+    flex: 1;
+  }
+
+  /* Modal / Drawer for Settings */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-content {
+    background: var(--bg-main);
+    border: 1px solid var(--border-muted);
+    border-radius: 12px;
+    padding: 1.75rem;
+    width: 90%;
+    max-width: 500px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+  <!-- Chat Header -->
+  <div class="chat-header">
+    <div>
+      <h1 style="font-size: 1.5rem; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <i class="bi bi-robot" style="color: var(--primary);"></i> Infrastructure AI Assistant
+      </h1>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0.25rem 0 0 0;">
+        Powered by MCP Server Tools &amp; LLM Automation
+      </p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <select id="orchestrator-mode" class="form-control" style="width: auto; font-size: 0.85rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-muted); border-radius: 6px; padding: 0.4rem 0.75rem;" onchange="onOrchestratorModeChange()">
+        <option value="fsm" selected>⚡ Deterministic FSM Agent</option>
+        <option value="legacy">🤖 Legacy ReAct LLM Agent</option>
+      </select>
+      <button class="btn btn-secondary" onclick="openSettingsModal()" id="btn-open-settings">
+        <i class="bi bi-gear-fill"></i> Model Settings
+      </button>
+    </div>
+  </div>
+
+
+
+  <!-- Suggestion Chips -->
+  <div class="suggestion-chips" id="suggestion-chips">
+    <div class="chip" onclick="useSuggestion('What cloud infrastructure tasks are available?')">
+      <i class="bi bi-list-task"></i> Available Tasks
+    </div>
+    <div class="chip" onclick="useSuggestion('List database tasks for AWS')">
+      <i class="bi bi-database"></i> AWS Databases
+    </div>
+    <div class="chip" onclick="useSuggestion('Provision a local redis cache called dev-redis-cache')">
+      <i class="bi bi-hdd-network"></i> Deploy Local Redis
+    </div>
+    <div class="chip" onclick="useSuggestion('Get status of dev-redis-cache')">
+      <i class="bi bi-activity"></i> Check Status
+    </div>
+  </div>
+
+  <!-- Messages Stream Box -->
+  <div class="chat-box" id="chat-box">
+    <div class="message-row assistant">
+      <div class="message-bubble">
+        👋 Hello! I am your Terraform Engine AI Assistant. Ask me to list templates, inspect schemas, or provision
+        infrastructure across AWS, Azure, GCP, or Local Docker.
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Bar -->
+  <form class="input-bar" onsubmit="submitChatMessage(event)">
+    <input type="text" id="chat-input" class="form-control"
+      placeholder="Ask AI to list, provision, or manage deployments..." autocomplete="off" required>
+    <button type="submit" class="btn btn-primary" id="btn-send">
+      <i class="bi bi-send-fill"></i> Send
+    </button>
+  </form>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal-content glass-panel">
+    <h2 style="font-size: 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+      <i class="bi bi-sliders"></i> LLM & Provider Configuration
+    </h2>
+
+    <div class="form-group">
+      <label for="setting-provider">Provider</label>
+      <select id="setting-provider" class="form-control" onchange="onProviderChange()">
+        <option value="groq">Groq Cloud (Server Default)</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">Custom / In-House / On-Prem (Ollama / vLLM)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="setting-model">Model Name</label>
+      <input type="text" id="setting-model" class="form-control"
+        placeholder="e.g. llama-3.3-70b-versatile or gpt-4o-mini">
+    </div>
+
+    <div class="form-group">
+      <label for="setting-apikey">API Key (Optional Override)</label>
+      <input type="password" id="setting-apikey" class="form-control"
+        placeholder="Leave empty to use server default .env key">
+      <span class="form-help">Your API key remains local in your browser session.</span>
+    </div>
+
+    <div class="form-group" id="group-custom-url" style="display: none;">
+      <label for="setting-customurl">Custom Base URL (Ollama / vLLM)</label>
+      <input type="text" id="setting-customurl" class="form-control" placeholder="http://localhost:11434/v1">
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let chatMessagesHistory = [];
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadSettings();
+  });
+
+  function openSettingsModal() {
+    document.getElementById("settings-modal").style.display = "flex";
+  }
+
+  function closeSettingsModal() {
+    document.getElementById("settings-modal").style.display = "none";
+  }
+
+  function onProviderChange() {
+    const provider = document.getElementById("setting-provider").value;
+    const customUrlGroup = document.getElementById("group-custom-url");
+    const modelInput = document.getElementById("setting-model");
+
+    if (provider === "custom") {
+      customUrlGroup.style.display = "block";
+      if (!modelInput.value) modelInput.value = "llama3.3";
+    } else {
+      customUrlGroup.style.display = "none";
+      if (provider === "groq" && (!modelInput.value || modelInput.value === "gpt-4o-mini")) {
+        modelInput.value = "llama-3.3-70b-versatile";
+      } else if (provider === "openai" && (!modelInput.value || modelInput.value === "llama-3.3-70b-versatile")) {
+        modelInput.value = "gpt-4o-mini";
+      }
+    }
+  }
+
+  function onOrchestratorModeChange() {
+    const mode = document.getElementById("orchestrator-mode").value;
+    localStorage.setItem("orchestrator_mode", mode);
+  }
+
+  function loadSettings() {
+    const provider = localStorage.getItem("llm_provider") || "groq";
+    const model = localStorage.getItem("llm_model") || "llama-3.3-70b-versatile";
+    const apiKey = localStorage.getItem("llm_apikey") || "";
+    const customUrl = localStorage.getItem("llm_customurl") || "http://localhost:11434/v1";
+    const mode = localStorage.getItem("orchestrator_mode") || "fsm";
+
+    document.getElementById("setting-provider").value = provider;
+    document.getElementById("setting-model").value = model;
+    document.getElementById("setting-apikey").value = apiKey;
+    document.getElementById("setting-customurl").value = customUrl;
+    document.getElementById("orchestrator-mode").value = mode;
+
+    onProviderChange();
+  }
+
+  function saveSettings() {
+    localStorage.setItem("llm_provider", document.getElementById("setting-provider").value);
+    localStorage.setItem("llm_model", document.getElementById("setting-model").value);
+    localStorage.setItem("llm_apikey", document.getElementById("setting-apikey").value);
+    localStorage.setItem("llm_customurl", document.getElementById("setting-customurl").value);
+    closeSettingsModal();
+  }
+
+  function useSuggestion(text) {
+    document.getElementById("chat-input").value = text;
+    submitChatMessage(new Event("submit"));
+  }
+
+  function toggleToolDetails(id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.style.display = el.style.display === "block" ? "none" : "block";
+    }
+  }
+
+  async function submitChatMessage(e) {
+    e.preventDefault();
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = "";
+    const sendBtn = document.getElementById("btn-send");
+    sendBtn.disabled = true;
+
+    // Append User Message to UI
+    appendUserBubble(text);
+    chatMessagesHistory.push({ role: "user", content: text });
+
+    // Show Loading Indicator Bubble
+    const loadingId = appendLoadingBubble();
+    scrollToBottom();
+
+    // Prepare Request Configuration
+    const provider = localStorage.getItem("llm_provider") || "groq";
+    const model = localStorage.getItem("llm_model") || "llama-3.3-70b-versatile";
+    const apiKey = localStorage.getItem("llm_apikey") || "";
+    const customUrl = localStorage.getItem("llm_customurl") || "http://localhost:11434/v1";
+    const mode = localStorage.getItem("orchestrator_mode") || "fsm";
+    const endpoint = mode === "legacy" ? "/api/chat/legacy" : "/api/chat";
+
+    const payload = {
+      messages: chatMessagesHistory,
+      provider: provider,
+      model: model,
+      api_key: apiKey || null,
+      custom_url: provider === "custom" ? customUrl : null
+    };
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+
+      const data = await response.json();
+      removeBubble(loadingId);
+
+      if (!response.ok) {
+        const errMsg = (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) || `Server returned HTTP status ${response.status}`;
+        throw new Error(`API Error (${response.status}): ${errMsg}`);
+      }
+
+      // Update full message history from server
+      if (data.messages && data.messages.length > 0) {
+        chatMessagesHistory = data.messages;
+      }
+
+      // Render execution trace badges and final response
+      appendAssistantResponse(data.final_response, data.execution_trace);
+
+    } catch (err) {
+      removeBubble(loadingId);
+      appendAssistantResponse(`⚠️ Error: ${err.message}`, []);
+    } finally {
+      sendBtn.disabled = false;
+      scrollToBottom();
+    }
+  }
+
+  function appendUserBubble(text) {
+    const box = document.getElementById("chat-box");
+    const row = document.createElement("div");
+    row.className = "message-row user";
+    row.innerHTML = `<div class="message-bubble">${escapeHtml(text)}</div>`;
+    box.appendChild(row);
+  }
+
+  function appendLoadingBubble() {
+    const box = document.getElementById("chat-box");
+    const row = document.createElement("div");
+    const id = "loading-" + Date.now();
+    row.id = id;
+    row.className = "message-row assistant";
+    row.innerHTML = `<div class="message-bubble"><i class="bi bi-hourglass-split"></i> <em>Thinking and evaluating MCP tools...</em></div>`;
+    box.appendChild(row);
+    return id;
+  }
+
+  function removeBubble(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function appendAssistantResponse(text, executionTrace) {
+    const box = document.getElementById("chat-box");
+    const row = document.createElement("div");
+    row.className = "message-row assistant";
+
+    let badgesHtml = "";
+    if (executionTrace && executionTrace.length > 0) {
+      badgesHtml += `<div class="tool-badge-container">`;
+      executionTrace.forEach((trace, idx) => {
+        const detailId = `trace-detail-${Date.now()}-${idx}`;
+        badgesHtml += `
+          <div>
+            <div class="tool-badge" onclick="toggleToolDetails('${detailId}')">
+              <i class="bi bi-gear-wide-connected"></i> Tool Executed: <strong>${trace.tool}</strong>
+              <i class="bi bi-chevron-down" style="font-size: 0.7rem;"></i>
+            </div>
+            <div class="tool-details" id="${detailId}">
+<strong>Arguments:</strong> ${escapeHtml(JSON.stringify(trace.arguments, null, 2))}
+<strong>Result:</strong> ${escapeHtml(trace.result)}
+            </div>
+          </div>
+        `;
+      });
+      badgesHtml += `</div>`;
+    }
+
+    row.innerHTML = `
+      ${badgesHtml}
+      <div class="message-bubble">${formatMarkdown(text)}</div>
+    `;
+    box.appendChild(row);
+  }
+
+  function scrollToBottom() {
+    const box = document.getElementById("chat-box");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function formatMarkdown(text) {
+    if (!text) return "";
+    if (typeof marked !== "undefined" && marked.parse) {
+      try {
+        return marked.parse(text);
+      } catch (err) {
+        console.warn("Marked parse error fallback:", err);
+      }
+    }
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 5px; border-radius: 4px;">$1</code>');
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  }
+
+  async function loadDynamicSuggestionChips() {
+    try {
+      const [catRes, provRes] = await Promise.all([
+        fetch('/api/categories/distinct'),
+        fetch('/api/providers/distinct')
+      ]);
+      if (!catRes.ok || !provRes.ok) return;
+      const categories = await catRes.json();
+      const providers = await provRes.json();
+
+      const container = document.getElementById('suggestion-chips');
+      if (!container || (!categories.length && !providers.length)) return;
+
+      let html = `
+        <div class="chip" onclick="useSuggestion('What cloud infrastructure tasks are available?')">
+          <i class="bi bi-list-task"></i> All Tasks
+        </div>
+        <div class="chip" onclick="useSuggestion('List all active deployments')">
+          <i class="bi bi-activity"></i> List Deployments
+        </div>
+      `;
+
+      const icons = {
+        compute: 'bi-cpu',
+        database: 'bi-database',
+        storage: 'bi-hdd-fill',
+        network: 'bi-diagram-3',
+        security: 'bi-shield-lock',
+        serverless: 'bi-lightning-charge',
+        messaging: 'bi-chat-dots'
+      };
+
+      categories.slice(0, 5).forEach(cat => {
+        const icon = icons[cat.toLowerCase()] || 'bi-folder';
+        const label = cat.charAt(0).toUpperCase() + cat.slice(1);
+        html += `
+          <div class="chip" onclick="useSuggestion('Show ${cat} tasks')">
+            <i class="bi ${icon}"></i> ${label} Tasks
+          </div>
+        `;
+      });
+
+      providers.slice(0, 4).forEach(prov => {
+        const label = prov.toUpperCase();
+        html += `
+          <div class="chip" onclick="useSuggestion('Show tasks for cloud provider ${prov}')">
+            <i class="bi bi-cloud"></i> ${label} Tasks
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    } catch (e) {
+      console.warn("Could not load dynamic suggestion chips:", e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', loadDynamicSuggestionChips);
+</script>
+{% endblock %}

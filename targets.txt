@@ -12,3 +12,23 @@ module_source in admin.py in create task is returning different values for zip a
 deployment name to be unique globally or per user? in deployment.py 45
 
 handling resource deletion from console.
+if deleting a subnet, but there are already resources in that subnet, logic to handle it.
+
+add get deployments tool
+make input schema for each task
+prepare new scripts for one go execution.
+
+logic to clear/refresh chatMessagesHistory from once in a while or at a timer or by estimating its size, so that api token input limit not burst
+add gemini api native support as well,
+catch groq 429, switch to gemini backend configured key
+data privacy vs tokenspm tradeoff logic
+
+if an admin adds a new category or new provider task, mcp and llm system prompt need awareness of it for better ux. 
+
+deploying at once comes at the cost of orphaned resource.
+let's say you create a vm, alongside create a public ip, but anyways vm creation fails, but public ip gets created, and name for public ip already exists, then it fails. 
+throw error to frontend immediately. to keep convenience i associated public ip name with vm name.
+
+managing chat memory for llm, a memory where he can refer if he feels like user inputs are vague.
+
+chat memory + context tradeoff with input token payload size.  

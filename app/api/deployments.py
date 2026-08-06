@@ -4,14 +4,14 @@ from arq.connections import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Header, Query
 from jsonschema import validate as jsonschema_validate
 from jsonschema.exceptions import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, require_admin
 from app.core.queue import get_arq_pool
 from app.models.task import Task
 from app.models.deployment import Deployment, DeploymentStatus
-from app.schemas.deployment import ProvisionResponse, DeploymentResponse
+from app.schemas.deployment import ProvisionResponse, DeploymentResponse, DeploymentSummaryResponse
 
 router = APIRouter(prefix="/api", tags=["deployments"])
 
@@ -74,6 +74,10 @@ async def provision_task(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create deployment: {exc}")
 
+    deployment.status = DeploymentStatus.PROVISIONING
+    db.commit()
+    db.refresh(deployment)
+
     try:
         await redis.enqueue_job(
             "run_terraform_create",
@@ -89,25 +93,39 @@ async def provision_task(
         db.commit()
         raise HTTPException(status_code=500, detail="Failed to queue provisioning job")
 
-    deployment.status = DeploymentStatus.PROVISIONING
-    db.commit()
-    db.refresh(deployment)
-
     return ProvisionResponse(
         run_id=run_id,
-        deployment_id=deployment.deployment_id,
+        deployment_id=deployment_id,
         deployment_name=deployment.deployment_name,
         task_name=deployment.task_name,
         status=deployment.status,
     )
 
 
-@router.get("/deployments", response_model=list[DeploymentResponse])
+@router.get("/deployments")
 def list_deployments(
+    view: Optional[str] = Query(None, description="Set to 'summary' for lightweight response"),
+    status: Optional[str] = Query(None, description="Optional status filter (e.g. ACTIVE, FAILED, PENDING, DESTROYED)"),
     db: Session = Depends(get_db),
     owner_id: str = Depends(get_current_user),
 ):
-    return db.query(Deployment).filter(Deployment.owner_id == owner_id).all()
+    query = db.query(Deployment).filter(Deployment.owner_id == owner_id)
+    if status:
+        query = query.filter(Deployment.status == status.upper())
+
+    if view == "summary":
+        query = query.options(
+            load_only(
+                Deployment.deployment_name,
+                Deployment.task_name,
+                Deployment.status,
+            )
+        )
+        deployments = query.all()
+        return [DeploymentSummaryResponse.model_validate(d) for d in deployments]
+
+    deployments = query.all()
+    return [DeploymentResponse.model_validate(d) for d in deployments]
 
 
 @router.get("/deployments/all", response_model=list[DeploymentResponse])
@@ -190,6 +208,43 @@ def get_deployment(
     return deployment
 
 
+def find_dependent_deployments(target: Deployment, db: Session) -> list[dict]:
+    """Inspects all active deployments globally to check if any reference the target deployment's
+    name or output resource identifiers. Does NOT match on generic input values (location, vm_size, etc.)
+    to avoid false positives."""
+    ref_tokens = {target.deployment_name}
+    # Only include output resource identifiers (e.g. subnet_id, vnet_id, resource_group_id)
+    if target.outputs and isinstance(target.outputs, dict):
+        for val in target.outputs.values():
+            if isinstance(val, str) and val.strip():
+                ref_tokens.add(val.strip())
+
+    # Query active deployments globally across all owners
+    active_deployments = db.query(Deployment).filter(
+        Deployment.deployment_id != target.deployment_id,
+        Deployment.status != DeploymentStatus.DESTROYED
+    ).all()
+
+    dependents = []
+    for dep in active_deployments:
+        if not dep.current_inputs or not isinstance(dep.current_inputs, dict):
+            continue
+        matched = False
+        for val in dep.current_inputs.values():
+            if isinstance(val, str) and val.strip() in ref_tokens:
+                matched = True
+                break
+        if matched:
+            dependents.append({
+                "deployment_id": dep.deployment_id,
+                "deployment_name": dep.deployment_name,
+                "task_name": dep.task_name,
+                "owner_id": dep.owner_id,
+                "status": dep.status.value if hasattr(dep.status, "value") else str(dep.status)
+            })
+    return dependents
+
+
 @router.delete("/deployments/name/{deployment_name}", status_code=status.HTTP_202_ACCEPTED)
 async def delete_deployment_by_name(
     deployment_name: str,
@@ -235,6 +290,15 @@ async def delete_deployment_by_name(
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete deployment in status '{deployment.status.value}'"
+        )
+
+    # Dependency check: block deletion if active dependent deployments rely on this deployment
+    dependents = find_dependent_deployments(deployment, db)
+    if dependents:
+        names = [f"{d['deployment_name']} (owner: {d['owner_id']})" if d.get("owner_id") != lookup_user else d["deployment_name"] for d in dependents]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Deletion blocked: active dependent deployments exist ({', '.join(names)}). Please destroy dependent resources first."
         )
 
     run_id = str(uuid.uuid4())
@@ -287,6 +351,15 @@ async def delete_deployment(
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete deployment in status '{deployment.status.value}'"
+        )
+
+    # Dependency check: block deletion if active dependent deployments rely on this deployment
+    dependents = find_dependent_deployments(deployment, db)
+    if dependents:
+        names = [f"{d['deployment_name']} (owner: {d['owner_id']})" if d.get("owner_id") != owner_id else d["deployment_name"] for d in dependents]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Deletion blocked: active dependent deployments exist ({', '.join(names)}). Please destroy dependent resources first."
         )
 
     run_id = str(uuid.uuid4())

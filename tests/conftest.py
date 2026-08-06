@@ -38,10 +38,12 @@ def override_get_db():
         db.close()
 
 
+mock_redis = MockArqRedis()
+
 @pytest.fixture(scope="session")
 def client():
     fastapi_app.dependency_overrides[get_db] = override_get_db
-    fastapi_app.dependency_overrides[get_arq_pool] = lambda: MockArqRedis()
+    fastapi_app.dependency_overrides[get_arq_pool] = lambda: mock_redis
     
     with TestClient(fastapi_app) as c:
         yield c

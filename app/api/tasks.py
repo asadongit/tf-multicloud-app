@@ -36,6 +36,23 @@ def list_tasks(
     #return tasks
 
 
+from typing import Any
+from app.core.queue import get_arq_pool
+
+@router.get("/categories/distinct", response_model=list[str])
+@router.get("/tasks/categories", response_model=list[str])
+async def get_distinct_categories(redis: Any = Depends(get_arq_pool)):
+    fields = await redis.hkeys("categories:distinct")
+    return sorted(f.decode() if isinstance(f, bytes) else f for f in fields)
+
+
+@router.get("/providers/distinct", response_model=list[str])
+@router.get("/tasks/providers", response_model=list[str])
+async def get_distinct_providers(redis: Any = Depends(get_arq_pool)):
+    fields = await redis.hkeys("providers:distinct")
+    return sorted(f.decode() if isinstance(f, bytes) else f for f in fields)
+
+
 @router.get("/tasks/{task_name}", response_model=TaskResponse)
 def get_task(
     task_name: str,

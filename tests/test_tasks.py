@@ -205,3 +205,53 @@ def test_delete_task(client):
     # 7. Verify task is gone from GET list
     list_tasks = client.get("/api/tasks")
     assert not any(t["task_name"] == "delete-test-task" for t in list_tasks.json())
+
+
+def test_distinct_categories_and_providers_caching(client):
+    headers = {"X-Admin-Token": "admin-token"}
+
+    # 1. Query initial distinct endpoints
+    res_cat = client.get("/api/categories/distinct")
+    assert res_cat.status_code == 200
+    assert isinstance(res_cat.json(), list)
+
+    res_prov = client.get("/api/providers/distinct")
+    assert res_prov.status_code == 200
+    assert isinstance(res_prov.json(), list)
+
+    # 2. Create a task with custom category and provider
+    tf_content = b'resource "null_resource" "dummy" {}'
+    payload = {
+        "task_name": "redis-test-task",
+        "display_name": "Redis Test Task",
+        "description": "A test terraform task",
+        "input_schema": '{"type": "object"}',
+        "category": "custom-category",
+        "provider": "custom-provider",
+        "module_version": "1.0.0"
+    }
+
+    create_res = client.post(
+        "/api/admin/tasks",
+        data=payload,
+        files={"script": ("main.tf", io.BytesIO(tf_content), "text/plain")},
+        headers=headers
+    )
+    assert create_res.status_code == 201
+
+    # 3. Verify custom category and provider appear in distinct endpoints
+    cats = client.get("/api/categories/distinct").json()
+    assert "custom-category" in cats
+
+    provs = client.get("/api/providers/distinct").json()
+    assert "custom-provider" in provs
+
+    # 4. Delete the task and verify custom category and provider are retired
+    del_res = client.delete("/api/admin/tasks/redis-test-task", headers=headers)
+    assert del_res.status_code == 204
+
+    cats_after = client.get("/api/categories/distinct").json()
+    assert "custom-category" not in cats_after
+
+    provs_after = client.get("/api/providers/distinct").json()
+    assert "custom-provider" not in provs_after
