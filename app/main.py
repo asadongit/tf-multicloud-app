@@ -7,7 +7,7 @@ from app.core.database import Base, engine
 from app.api.admin import router as admin_router
 from app.api.tasks import router as tasks_router
 from app.api.deployments import router as deployments_router
-from app.api.chat import router as chat_router
+# from app.api.chat import router as chat_router
 from app.frontend.router import router as frontend_router
 from app.core.queue import init_arq_pool
 from app.mcp_server import mcp
@@ -66,7 +66,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(admin_router)
 app.include_router(tasks_router)
 app.include_router(deployments_router)
-app.include_router(chat_router)
+# app.include_router(chat_router)
 
 # Register HTML Frontend Router
 app.include_router(frontend_router)

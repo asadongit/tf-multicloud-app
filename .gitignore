@@ -38,3 +38,8 @@ features.txt
 app/agent/
 app/core/llm_orchestrator.py
 app/core/history_manager.py
+app/api/chat.py
+tests/test_chat.py
+tests/test_fsm_integration.py
+tests/test_fsm_live_eval.py
+tests/test_fsm_unit.py
