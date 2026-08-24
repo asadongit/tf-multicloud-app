@@ -15,12 +15,12 @@ def test_provision_task_success(client):
     payload = {
         "task_name": "provision-test-task",
         "display_name": "Provision Test Task",
-        "input_schema": '{"type": "object", "properties": {"param1": {"type": "string"}}, "required": ["param1"]}',
+        
     }
     create_response = client.post(
         "/api/admin/tasks",
         data=payload,
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "param1" { type = string }'), "text/plain")},
         headers=headers
     )
     assert create_response.status_code == 201
@@ -58,12 +58,12 @@ def test_provision_task_schema_validation_failure(client):
     payload = {
         "task_name": "validation-test-task",
         "display_name": "Validation Test Task",
-        "input_schema": '{"type": "object", "properties": {"param1": {"type": "string"}}, "required": ["param1"]}',
+        
     }
     client.post(
         "/api/admin/tasks",
         data=payload,
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "param1" { type = string }'), "text/plain")},
         headers=headers
     )
 
@@ -91,7 +91,7 @@ def test_provision_task_duplicate_deployment_name(client):
     payload = {
         "task_name": "duplicate-deploy-task",
         "display_name": "Duplicate Deploy Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -133,7 +133,7 @@ def test_worker_execution_success(client):
     payload = {
         "task_name": "worker-test-task",
         "display_name": "Worker Test Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -187,7 +187,7 @@ def test_get_and_list_deployments(client):
     payload = {
         "task_name": "list-dep-task",
         "display_name": "List Dep Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -265,7 +265,7 @@ def test_delete_deployment_success(client):
     payload = {
         "task_name": "del-dep-task",
         "display_name": "Delete Dep Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -340,7 +340,7 @@ def test_delete_deployment_failure(client):
     payload = {
         "task_name": "fail-del-task",
         "display_name": "Fail Delete Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -411,7 +411,7 @@ def test_delete_deployment_unauthorized(client):
     payload = {
         "task_name": "auth-del-task",
         "display_name": "Auth Delete Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -448,7 +448,7 @@ def test_delete_deployment_invalid_state(client):
     payload = {
         "task_name": "state-del-task",
         "display_name": "State Delete Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -482,12 +482,12 @@ def test_patch_deployment_success(client):
     payload = {
         "task_name": "patch-task",
         "display_name": "Patch Task",
-        "input_schema": '{"type": "object", "properties": {"param1": {"type": "string"}, "param2": {"type": "string"}}, "required": ["param1"]}',
+        
     }
     client.post(
         "/api/admin/tasks",
         data=payload,
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "param1" { type = string }\nvariable "param2" { \ntype = string\ndefault = "old" \n}'), "text/plain")},
         headers=headers
     )
 
@@ -561,12 +561,12 @@ def test_patch_deployment_validation_failure(client):
     payload = {
         "task_name": "patch-fail-task",
         "display_name": "Patch Fail Task",
-        "input_schema": '{"type": "object", "properties": {"param1": {"type": "string"}}, "required": ["param1"]}',
+        
     }
     client.post(
         "/api/admin/tasks",
         data=payload,
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "param1" { type = string }'), "text/plain")},
         headers=headers
     )
 
@@ -612,7 +612,7 @@ def test_patch_deployment_invalid_state(client):
     payload = {
         "task_name": "patch-state-task",
         "display_name": "Patch State Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -649,9 +649,9 @@ def test_delete_deployment_blocked_by_dependencies(client):
         data={
             "task_name": "parent-subnet-task",
             "display_name": "Parent Subnet Task",
-            "input_schema": '{"type": "object", "properties": {"subnet_name": {"type": "string"}}}',
+            
         },
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "subnet_name" { type = string }'), "text/plain")},
         headers={"X-Admin-Token": "admin-token"}
     )
     client.post(
@@ -659,9 +659,9 @@ def test_delete_deployment_blocked_by_dependencies(client):
         data={
             "task_name": "child-vm-task",
             "display_name": "Child VM Task",
-            "input_schema": '{"type": "object", "properties": {"subnet_name": {"type": "string"}}}',
+            
         },
-        files={"script": ("main.tf", io.BytesIO(b""), "text/plain")},
+        files={"script": ("main.tf", io.BytesIO(b'variable "subnet_name" { type = string }'), "text/plain")},
         headers={"X-Admin-Token": "admin-token"}
     )
 

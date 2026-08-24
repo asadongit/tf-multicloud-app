@@ -4,6 +4,7 @@ import shutil
 import zipfile
 from pathlib import Path
 from typing import Optional, Any
+import hcl2
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from jsonschema import Draft7Validator
@@ -38,6 +39,105 @@ def _validate_input_schema(raw: str) -> dict:
     return schema
 
 
+def _strip_quotes(val: Any) -> Any:
+    if isinstance(val, str):
+        if val.startswith('"') and val.endswith('"'):
+            return val[1:-1]
+        if val.startswith("'") and val.endswith("'"):
+            return val[1:-1]
+    return val
+
+
+def _generate_schema_from_tf(module_source: str) -> dict:
+    path = Path(module_source)
+    tf_files = []
+    
+    if path.is_file():
+        if path.suffix == ".tf":
+            tf_files.append(path)
+    elif path.is_dir():
+        tf_files = list(path.glob("**/*.tf"))
+        
+    properties = {}
+    required = []
+    
+    for tf_file in tf_files:
+        try:
+            with open(tf_file, "r", encoding="utf-8") as f:
+                parsed = hcl2.load(f)
+        except Exception as e:
+            print(f"[Warning] Failed to parse {tf_file} with hcl2: {e}")
+            continue
+            
+        variables = parsed.get("variable", [])
+        
+        for var_block in variables:
+            for var_name_raw, var_attrs in var_block.items():
+                var_name = _strip_quotes(var_name_raw)
+                var_props = {}
+                
+                # Type mapping
+                tf_type = var_attrs.get("type", "string")
+                if isinstance(tf_type, list) and len(tf_type) > 0:
+                    tf_type_str = str(tf_type[0]).lower()
+                else:
+                    tf_type_str = str(tf_type).lower()
+                
+                if "number" in tf_type_str:
+                    var_props["type"] = "number"
+                elif "bool" in tf_type_str:
+                    var_props["type"] = "boolean"
+                elif "list" in tf_type_str or "tuple" in tf_type_str or "set" in tf_type_str:
+                    var_props["type"] = "array"
+                elif "map" in tf_type_str or "object" in tf_type_str:
+                    var_props["type"] = "object"
+                else:
+                    var_props["type"] = "string"
+                    
+                # Description
+                if "description" in var_attrs:
+                    desc = var_attrs["description"]
+                    if isinstance(desc, list) and len(desc) > 0:
+                        var_props["description"] = _strip_quotes(desc[0])
+                    else:
+                        var_props["description"] = _strip_quotes(desc)
+                        
+                # Default
+                if "default" in var_attrs:
+                    default_val = var_attrs["default"]
+                    if isinstance(default_val, list) and len(default_val) > 0:
+                        val = default_val[0]
+                    else:
+                        val = default_val
+                    
+                    if isinstance(val, str):
+                        var_props["default"] = _strip_quotes(val)
+                    else:
+                        var_props["default"] = val
+                else:
+                    required.append(var_name)
+                    
+                properties[var_name] = var_props
+                
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False
+    }
+    
+    if required:
+        schema["required"] = required
+        
+    # Optional: validate the generated schema programmatically
+    try:
+        Draft7Validator.check_schema(schema)
+    except SchemaError as exc:
+        raise HTTPException(status_code=500, detail=f"Generated schema is invalid: {exc.message}")
+        
+    return schema
+
+
 def _save_script(task_name: str, upload: UploadFile) -> str:
     """
     Persists the uploaded script under settings.TASK_SCRIPTS_ROOT/{task_name}/ and
@@ -48,7 +148,13 @@ def _save_script(task_name: str, upload: UploadFile) -> str:
         raise HTTPException(status_code=422, detail=f"Unsupported file type '{suffix}'. Use .tf or .zip")
 
     task_dir = settings.TASK_SCRIPTS_ROOT / task_name
-    task_dir.mkdir(parents=True, exist_ok=False)  # task_name is fresh, dir must not exist
+    try:
+        task_dir.mkdir(parents=True, exist_ok=False)  # task_name is fresh, dir must not exist
+    except FileExistsError:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task script directory '{task_name}' already exists on disk. Please delete it manually or use a different task name."
+        )
 
     dest_path = task_dir / upload.filename
 
@@ -109,7 +215,6 @@ async def create_task(
     task_name: str = Form(..., description="Unique alphanumeric identifier for the task"),
     display_name: str = Form(...),
     description: Optional[str] = Form(None),
-    input_schema: str = Form(..., description="JSON Schema as a string"),
     category: Optional[str] = Form(None),
     provider: Optional[str] = Form(None),
     module_version: Optional[str] = Form(None),
@@ -133,8 +238,8 @@ async def create_task(
             detail=f"Task with name '{task_name}' already exists."
         )
 
-    schema = _validate_input_schema(input_schema)
     module_source = _save_script(task_name, script)
+    schema = _generate_schema_from_tf(module_source)
 
     task = Task(
         task_name=task_name,

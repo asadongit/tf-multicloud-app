@@ -6,7 +6,7 @@ from app.core.config import settings
 
 def test_create_task_success(client):
     # Prepare dummy terraform script file
-    tf_content = b'resource "null_resource" "dummy" {}'
+    tf_content = b'resource "null_resource" "dummy" {}\\nvariable "param1" { type = string }'
     file_name = "main.tf"
     
     # Create form fields
@@ -14,7 +14,7 @@ def test_create_task_success(client):
         "task_name": "test-task",
         "display_name": "Test Task",
         "description": "A test terraform task",
-        "input_schema": '{"type": "object", "properties": {"param1": {"type": "string"}}, "required": ["param1"]}',
+        
         "category": "utility",
         "provider": "null",
         "module_version": "1.0.0"
@@ -42,7 +42,7 @@ def test_create_task_unauthorized(client):
         "task_name": "unauthorized-task",
         "display_name": "Test Task",
         "description": "A test terraform task",
-        "input_schema": '{"type": "object"}',
+        
     }
     headers = {"X-Admin-Token": "wrong-token"}
     response = client.post(
@@ -62,7 +62,7 @@ def test_get_and_list_tasks(client):
         "task_name": "fetch-test",
         "display_name": "Fetch Test",
         "description": "To fetch",
-        "input_schema": '{"type": "object"}',
+        
     }
     create_response = client.post(
         "/api/admin/tasks",
@@ -95,7 +95,7 @@ def test_create_task_duplicate_name(client):
     payload = {
         "task_name": "duplicate-task",
         "display_name": "Task 1",
-        "input_schema": '{"type": "object"}',
+        
     }
     # Create first task
     response1 = client.post(
@@ -124,7 +124,7 @@ def test_create_task_invalid_name(client):
         payload = {
             "task_name": invalid_name,
             "display_name": "Invalid Task",
-            "input_schema": '{"type": "object"}',
+            
         }
         response = client.post(
             "/api/admin/tasks",
@@ -143,7 +143,7 @@ def test_delete_task(client):
     payload = {
         "task_name": "delete-test-task",
         "display_name": "Delete Test Task",
-        "input_schema": '{"type": "object"}',
+        
     }
     client.post(
         "/api/admin/tasks",
@@ -220,12 +220,12 @@ def test_distinct_categories_and_providers_caching(client):
     assert isinstance(res_prov.json(), list)
 
     # 2. Create a task with custom category and provider
-    tf_content = b'resource "null_resource" "dummy" {}'
+    tf_content = b'resource "null_resource" "dummy" {}\\nvariable "param1" { type = string }'
     payload = {
         "task_name": "redis-test-task",
         "display_name": "Redis Test Task",
         "description": "A test terraform task",
-        "input_schema": '{"type": "object"}',
+        
         "category": "custom-category",
         "provider": "custom-provider",
         "module_version": "1.0.0"

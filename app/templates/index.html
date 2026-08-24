@@ -82,7 +82,7 @@
         </div>
         
         <div class="task-actions">
-          <button class="btn btn-primary" onclick="openProvisionModal('{{ task.task_name }}', '{{ task.display_name }}', '{{ task.input_schema|tojson|forceescape }}')">
+          <button class="btn btn-primary" data-schema="{{ task.input_schema|tojson|forceescape }}" onclick="openProvisionModal('{{ task.task_name }}', '{{ task.display_name }}', this.getAttribute('data-schema'))">
             <i class="bi bi-play"></i> Provision
           </button>
           <button class="btn btn-danger" onclick="deleteTask('{{ task.task_name }}')">
@@ -210,11 +210,19 @@
       let props = schema.properties || schema;
       let templateObj = {};
       for (let k in props) {
-        if (props[k].type === "string") templateObj[k] = "value";
-        else if (props[k].type === "number" || props[k].type === "integer") templateObj[k] = 0;
-        else if (props[k].type === "boolean") templateObj[k] = true;
-        else if (props[k].type === "array") templateObj[k] = [];
-        else templateObj[k] = "";
+        if (props[k].default !== undefined) {
+          templateObj[k] = props[k].default;
+        } else if (props[k].type === "string") {
+          templateObj[k] = "value";
+        } else if (props[k].type === "number" || props[k].type === "integer") {
+          templateObj[k] = 0;
+        } else if (props[k].type === "boolean") {
+          templateObj[k] = true;
+        } else if (props[k].type === "array") {
+          templateObj[k] = [];
+        } else {
+          templateObj[k] = "";
+        }
       }
       inputTemplate = JSON.stringify(templateObj, null, 2);
     } catch (e) {

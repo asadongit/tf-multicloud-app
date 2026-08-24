@@ -68,25 +68,6 @@
         </div>
       </div>
 
-      <!-- JSON Input Schema -->
-      <div class="form-group">
-        <label for="input_schema">Input Validation Schema (JSON Schema)</label>
-        <textarea id="input_schema" name="input_schema" class="form-control" rows="8" placeholder='{
-  "variable1": {
-    "type": "value"
-  }
-  "variable2": {
-    "type": "value"
-  }
-  "variable3": {
-    "type": "value"
-  }
-  ...
-  ...
-}' required></textarea>
-        <span class="form-help">JSON Schema defining the properties, types, and constraints for variables that will
-          compose your <code>terraform.tfvars.json</code> file.</span>
-      </div>
 
       <!-- File Script Upload -->
       <div class="form-group">
@@ -118,7 +99,6 @@
     const description = document.getElementById("description").value.trim();
     const category = document.getElementById("category").value.trim();
     const provider = document.getElementById("provider").value.trim();
-    const schemaText = document.getElementById("input_schema").value.trim();
     const fileInput = document.getElementById("script");
     const errorBlock = document.getElementById("form-error-block");
     const errorMsg = document.getElementById("form-error-msg");
@@ -134,16 +114,7 @@
       return;
     }
 
-    // 2. Client-side JSON Schema validation check
-    try {
-      JSON.parse(schemaText);
-    } catch (err) {
-      errorBlock.style.display = "block";
-      errorMsg.innerText = "Input validation schema is not valid JSON. Please check syntax (commas, curly brackets).";
-      return;
-    }
-
-    // 3. Assemble Multipart form upload
+    // 2. Assemble Multipart form upload
     submitBtn.disabled = true;
     submitBtn.innerHTML = `<i class="bi bi-hourglass"></i> Uploading...`;
 
@@ -159,7 +130,7 @@
     if (provider) {
       formData.append("provider", provider);
     }
-    formData.append("input_schema", schemaText);
+
     formData.append("script", fileInput.files[0]);
 
     try {
