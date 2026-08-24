@@ -81,39 +81,48 @@ class MockArqRedis:
                 count += 1
         return count
 
+    def _run_async_worker(self, coro_func, *args, **kwargs):
+        asyncio.run(coro_func(*args, **kwargs))
+
     async def enqueue_job(self, function_name: str, *args, **kwargs):
         self.jobs.append((function_name, args, kwargs))
         print(f"[MockArqRedis] Enqueued job: '{function_name}' with args={args} kwargs={kwargs}")
         if function_name == "run_terraform_create":
             # Dynamically import to prevent circular dependency
             from app.worker import run_terraform_create
-            # Spawn task to run asynchronously in-process
-            asyncio.create_task(run_terraform_create(
-                ctx=None,
-                run_id=kwargs.get("run_id"),
-                deployment_id=kwargs.get("deployment_id"),
-                task_name=kwargs.get("task_name"),
-                module_source=kwargs.get("module_source"),
-                inputs=kwargs.get("inputs")
+            # Spawn task to run asynchronously in a separate thread
+            asyncio.create_task(asyncio.to_thread(
+                self._run_async_worker,
+                run_terraform_create,
+                None,
+                kwargs.get("run_id"),
+                kwargs.get("deployment_id"),
+                kwargs.get("task_name"),
+                kwargs.get("module_source"),
+                kwargs.get("inputs")
             ))
         elif function_name == "run_terraform_destroy":
             # Dynamically import to prevent circular dependency
             from app.worker import run_terraform_destroy
-            # Spawn task to run asynchronously in-process
-            asyncio.create_task(run_terraform_destroy(
-                ctx=None,
-                run_id=kwargs.get("run_id"),
-                deployment_id=kwargs.get("deployment_id")
+            # Spawn task to run asynchronously in a separate thread
+            asyncio.create_task(asyncio.to_thread(
+                self._run_async_worker,
+                run_terraform_destroy,
+                None,
+                kwargs.get("run_id"),
+                kwargs.get("deployment_id")
             ))
         elif function_name == "run_terraform_update":
             # Dynamically import to prevent circular dependency
             from app.worker import run_terraform_update
-            # Spawn task to run asynchronously in-process
-            asyncio.create_task(run_terraform_update(
-                ctx=None,
-                run_id=kwargs.get("run_id"),
-                deployment_id=kwargs.get("deployment_id"),
-                inputs=kwargs.get("inputs")
+            # Spawn task to run asynchronously in a separate thread
+            asyncio.create_task(asyncio.to_thread(
+                self._run_async_worker,
+                run_terraform_update,
+                None,
+                kwargs.get("run_id"),
+                kwargs.get("deployment_id"),
+                kwargs.get("inputs")
             ))
         return None
 

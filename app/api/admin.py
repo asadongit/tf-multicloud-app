@@ -114,6 +114,9 @@ def _generate_schema_from_tf(module_source: str) -> dict:
                         var_props["default"] = _strip_quotes(val)
                     else:
                         var_props["default"] = val
+                    
+                    if val is None:
+                        var_props["type"] = [var_props["type"], "null"]
                 else:
                     required.append(var_name)
                     
