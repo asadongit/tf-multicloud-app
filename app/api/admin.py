@@ -48,6 +48,119 @@ def _strip_quotes(val: Any) -> Any:
     return val
 
 
+def _parse_tf_type_to_jsonschema(raw_type: str) -> dict:
+    """
+    Parses a raw Terraform type string (as output by hcl2) into a JSON Schema.
+    e.g., '${map(object({priority = number}))}' -> {"type": "object", "additionalProperties": ...}
+    """
+    if not isinstance(raw_type, str):
+        return {"type": "string"}
+        
+    s = raw_type.strip()
+    
+    # Remove ${...} wrapper if present
+    if s.startswith("${") and s.endswith("}"):
+        s = s[2:-1].strip()
+        
+    if s == "string":
+        return {"type": "string"}
+    if s == "number":
+        return {"type": "number"}
+    if s == "bool" or s == "boolean":
+        return {"type": "boolean"}
+    if s == "any":
+        return {}
+        
+    def _extract_between(text, open_char, close_char):
+        start = text.find(open_char)
+        if start == -1: return ""
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == open_char:
+                depth += 1
+            elif text[i] == close_char:
+                depth -= 1
+                if depth == 0:
+                    return text[start+1:i].strip()
+        return ""
+        
+    def _split_fields(text):
+        fields = []
+        depth = 0
+        current = []
+        for char in text:
+            if char in "({[": depth += 1
+            elif char in ")}]": depth -= 1
+            
+            if char == "," and depth == 0:
+                fields.append("".join(current).strip())
+                current = []
+            else:
+                current.append(char)
+        if current:
+            val = "".join(current).strip()
+            if val:
+                fields.append(val)
+        return fields
+
+    if s.startswith("list(") or s.startswith("set("):
+        inner = _extract_between(s, "(", ")")
+        schema = {"type": "array", "items": _parse_tf_type_to_jsonschema(inner)}
+        if s.startswith("set("):
+            schema["uniqueItems"] = True
+        return schema
+        
+    if s.startswith("map("):
+        inner = _extract_between(s, "(", ")")
+        return {"type": "object", "additionalProperties": _parse_tf_type_to_jsonschema(inner)}
+        
+    if s.startswith("object("):
+        inner = _extract_between(s, "{", "}")
+        fields = _split_fields(inner)
+        properties = {}
+        required = []
+        
+        for field in fields:
+            if "=" not in field:
+                continue
+            idx = field.find("=")
+            k = field[:idx].strip()
+            v = field[idx+1:].strip()
+            
+            if v.startswith("optional("):
+                opt_inner = _extract_between(v, "(", ")")
+                opt_parts = _split_fields(opt_inner)
+                if opt_parts:
+                    properties[k] = _parse_tf_type_to_jsonschema(opt_parts[0])
+                    if len(opt_parts) > 1:
+                        def_val = opt_parts[1]
+                        try:
+                            properties[k]["default"] = json.loads(def_val)
+                        except json.JSONDecodeError:
+                            properties[k]["default"] = _strip_quotes(def_val)
+            else:
+                properties[k] = _parse_tf_type_to_jsonschema(v)
+                required.append(k)
+                
+        schema = {"type": "object", "properties": properties, "additionalProperties": False}
+        if required:
+            schema["required"] = required
+        return schema
+        
+    if s.startswith("tuple("):
+        inner = _extract_between(s, "[", "]")
+        elements = _split_fields(inner)
+        items_schema = [_parse_tf_type_to_jsonschema(e) for e in elements]
+        return {
+            "type": "array", 
+            "items": items_schema, 
+            "minItems": len(items_schema), 
+            "maxItems": len(items_schema)
+        }
+        
+    return {"type": "string"}
+
+
 def _generate_schema_from_tf(module_source: str) -> dict:
     path = Path(module_source)
     tf_files = []
@@ -79,20 +192,12 @@ def _generate_schema_from_tf(module_source: str) -> dict:
                 # Type mapping
                 tf_type = var_attrs.get("type", "string")
                 if isinstance(tf_type, list) and len(tf_type) > 0:
-                    tf_type_str = str(tf_type[0]).lower()
+                    tf_type_str = str(tf_type[0])
                 else:
-                    tf_type_str = str(tf_type).lower()
+                    tf_type_str = str(tf_type)
                 
-                if "number" in tf_type_str:
-                    var_props["type"] = "number"
-                elif "bool" in tf_type_str:
-                    var_props["type"] = "boolean"
-                elif "list" in tf_type_str or "tuple" in tf_type_str or "set" in tf_type_str:
-                    var_props["type"] = "array"
-                elif "map" in tf_type_str or "object" in tf_type_str:
-                    var_props["type"] = "object"
-                else:
-                    var_props["type"] = "string"
+                parsed_schema = _parse_tf_type_to_jsonschema(tf_type_str)
+                var_props.update(parsed_schema)
                     
                 # Description
                 if "description" in var_attrs:
@@ -115,8 +220,12 @@ def _generate_schema_from_tf(module_source: str) -> dict:
                     else:
                         var_props["default"] = val
                     
-                    if val is None:
-                        var_props["type"] = [var_props["type"], "null"]
+                    # Optional: Adjust type if default is null
+                    if val is None and "type" in var_props:
+                        if isinstance(var_props["type"], str):
+                            var_props["type"] = [var_props["type"], "null"]
+                        elif isinstance(var_props["type"], list) and "null" not in var_props["type"]:
+                            var_props["type"].append("null")
                 else:
                     required.append(var_name)
                     

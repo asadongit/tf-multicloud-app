@@ -20,4 +20,5 @@ dependencies = [
     "fastmcp>=3.4.5",
     "psycopg2-binary>=2.9.12",
     "python-hcl2>=8.1.2",
+    "asyncpg>=0.31.0",
 ]

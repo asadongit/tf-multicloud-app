@@ -204,25 +204,52 @@
     
     // Auto-generate template inputs from input_schema properties
     let inputTemplate = "{\n  \n}";
+
+    function generateTemplate(schema) {
+      if (!schema) return null;
+      if (schema.default !== undefined) return schema.default;
+      
+      let typeStr = schema.type;
+      if (Array.isArray(typeStr)) {
+        typeStr = typeStr.find(t => t !== "null") || "string";
+      }
+
+      if (typeStr === "string") return "value";
+      if (typeStr === "number" || typeStr === "integer") return 0;
+      if (typeStr === "boolean") return true;
+      
+      if (typeStr === "array" && schema.items) {
+        if (Array.isArray(schema.items)) {
+          return schema.items.map(s => generateTemplate(s));
+        }
+        return [generateTemplate(schema.items)];
+      }
+      
+      if (typeStr === "object" && schema.properties) {
+        let obj = {};
+        for (let k in schema.properties) {
+          obj[k] = generateTemplate(schema.properties[k]);
+        }
+        return obj;
+      }
+      
+      if (typeStr === "object" && schema.additionalProperties) {
+        return { "example_key": generateTemplate(schema.additionalProperties) };
+      }
+      
+      if (!typeStr) return null;
+      return "";
+    }
+
     try {
       const schema = JSON.parse(schemaJsonStr);
-      // Handle flat key-value definitions directly
-      let props = schema.properties || schema;
       let templateObj = {};
-      for (let k in props) {
-        if (props[k].default !== undefined) {
-          templateObj[k] = props[k].default;
-        } else if (props[k].type === "string") {
-          templateObj[k] = "value";
-        } else if (props[k].type === "number" || props[k].type === "integer") {
-          templateObj[k] = 0;
-        } else if (props[k].type === "boolean") {
-          templateObj[k] = true;
-        } else if (props[k].type === "array") {
-          templateObj[k] = [];
-        } else {
-          templateObj[k] = "";
+      if (schema.properties) {
+        for (let k in schema.properties) {
+          templateObj[k] = generateTemplate(schema.properties[k]);
         }
+      } else {
+         templateObj = generateTemplate(schema) || {};
       }
       inputTemplate = JSON.stringify(templateObj, null, 2);
     } catch (e) {
